@@ -44,10 +44,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/react-draggable-frame.git"
+    "url": "https://github.com/mokcj0825/react-draggable-frame.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/react-draggable-frame/issues"
+    "url": "https://github.com/mokcj0825/react-draggable-frame/issues"
   },
-  "homepage": "https://github.com/yourusername/react-draggable-frame#readme"
+  "homepage": "https://github.com/mokcj0825/react-draggable-frame#readme"
 }
