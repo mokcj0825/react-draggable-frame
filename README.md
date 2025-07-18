@@ -44,6 +44,7 @@ function App() {
 | `defaultPosition` | `{ x: number, y: number }` | `{ x: 20, y: 20 }` | Initial position of the frame |
 | `className` | `string` | `''` | Custom CSS class |
 | `style` | `React.CSSProperties` | `{}` | Custom inline styles |
+| `consumeEvents` | `boolean` | `false` | Whether to consume click events to prevent bubbling |
 
 ## How It Works
 
@@ -80,6 +81,16 @@ function App() {
   <div style={{ width: '400px', height: '300px', padding: '20px' }}>
     <h1>Large Content</h1>
     <p>This frame will automatically size to fit this content.</p>
+  </div>
+</DraggableFrame>
+```
+
+### Event Consumption
+```tsx
+<DraggableFrame consumeEvents={true}>
+  <div style={{ padding: '20px', backgroundColor: 'white' }}>
+    <h3>Event Consuming Frame</h3>
+    <p>This frame will consume click events to prevent them from bubbling up.</p>
   </div>
 </DraggableFrame>
 ```

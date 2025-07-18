@@ -18,6 +18,7 @@ export interface Props {
     defaultPosition?: Position;
     className?: string;
     style?: React.CSSProperties;
+    consumeEvents?: boolean;
 }
 
 
@@ -27,7 +28,8 @@ const STORAGE_KEY = 'frameState';
     children,
     defaultPosition = { x: 20, y: 20 },
     className = '',
-    style = {}
+    style = {},
+    consumeEvents = false
 }) => {
     const [state, setState] = useState<State>(() => {
         const savedState = localStorage.getItem(STORAGE_KEY);
@@ -101,6 +103,13 @@ const STORAGE_KEY = 'frameState';
         };
 
         setState(prev => ({ ...prev, isDragging: true }));
+    };
+
+    const handleClick = (event: React.MouseEvent) => {
+        if (consumeEvents) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
     };
 
 
@@ -204,6 +213,7 @@ const STORAGE_KEY = 'frameState';
             className={className}
             onMouseDown={handleMouseDown}
             onTouchStart={handleTouchStart}
+            onClick={handleClick}
             onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
