@@ -1,4 +1,5 @@
 import './App.css'
+import Draggable from './Draggable';
 import DraggableFrame from './DraggableFrame';
 
 function App() {

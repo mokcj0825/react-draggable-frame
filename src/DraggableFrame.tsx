@@ -6,14 +6,18 @@ import React, {
   cloneElement,
   isValidElement
 } from 'react';
-import type { ReactNode, MouseEvent as ReactMouseEvent, TouchEvent as ReactTouchEvent } from 'react';
+import type {
+  ReactNode,
+  MouseEvent as ReactMouseEvent,
+  TouchEvent as ReactTouchEvent
+} from 'react';
 
 interface Position {
   x: number;
   y: number;
 }
 
-interface Props {
+export interface Props {
   id: string;
   children: ReactNode;
   defaultPosition?: Position;
@@ -25,7 +29,6 @@ interface Props {
 
 const STORAGE_PREFIX = 'draggable-frame';
 const DRAG_THRESHOLD = 5;
-let activeDragId: string | null = null;
 
 const DraggableFrame: React.FC<Props> = ({
   id,
@@ -39,7 +42,7 @@ const DraggableFrame: React.FC<Props> = ({
   const frameRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<Position>(() => {
     const saved = localStorage.getItem(`${STORAGE_PREFIX}:${id}`);
-    if (saved && typeof window !== 'undefined') {
+    if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (parsed.percentage) {
@@ -54,97 +57,65 @@ const DraggableFrame: React.FC<Props> = ({
     return defaultPosition;
   });
 
-  const dragging = useRef(false);
-  const dragStartPosition = useRef<Position | null>(null);
-  const dragOrigin = useRef<Position>({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStart = useRef<Position | null>(null);
   const pointerOffset = useRef<Position>({ x: 0, y: 0 });
   const [anchor, setAnchor] = useState<'left' | 'right'>('left');
 
-  useEffect(() => {
-    if (!dragging.current) {
-      const px = position.x / window.innerWidth;
-      const py = position.y / window.innerHeight;
-      localStorage.setItem(`${STORAGE_PREFIX}:${id}`, JSON.stringify({ x: px, y: py, percentage: true }));
-    }
-  }, [position, id]);
-
-  useEffect(() => {
-    if (anchored && frameRef.current) {
-      const frame = frameRef.current;
-      const handleResize = () => {
-        const maxX = window.innerWidth - frame.offsetWidth;
-        setPosition(prev => ({
-          ...prev,
-          x: anchor === 'left' ? 10 : maxX - 10
-        }));
-      };
-
-      window.addEventListener('resize', handleResize);
-      return () => window.removeEventListener('resize', handleResize);
-    }
-  }, [anchored, anchor]);
-
-  const onStart = (x: number, y: number) => {
-    if (activeDragId && activeDragId !== id) return;
-    activeDragId = id;
-    const rect = frameRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    dragStartPosition.current = { x, y };
-    dragOrigin.current = { x, y };
-    pointerOffset.current = { x: x - rect.left, y: y - rect.top };
+  const savePosition = (x: number, y: number) => {
+    const px = x / window.innerWidth;
+    const py = y / window.innerHeight;
+    localStorage.setItem(`${STORAGE_PREFIX}:${id}`, JSON.stringify({ x: px, y: py, percentage: true }));
   };
 
-  const onMove = (x: number, y: number) => {
-    if (activeDragId !== id || !dragStartPosition.current) return;
-    
-    const dx = x - dragStartPosition.current.x;
-    const dy = y - dragStartPosition.current.y;
-
-    if (!dragging.current && (anchored || Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
-      dragging.current = true;
-    }
-    
-    if (!dragging.current) return;
-
-    const newX = x - pointerOffset.current.x;
-    const newY = y - pointerOffset.current.y;
+  const updatePosition = (x: number, y: number) => {
     const frame = frameRef.current;
     if (!frame) return;
     const maxX = window.innerWidth - frame.offsetWidth;
     const maxY = window.innerHeight - frame.offsetHeight;
-    setPosition({
-      x: Math.max(0, Math.min(newX, maxX)),
-      y: Math.max(0, Math.min(newY, maxY))
-    });
+    const newX = Math.max(0, Math.min(x, maxX));
+    const newY = Math.max(0, Math.min(y, maxY));
+    setPosition({ x: newX, y: newY });
+    savePosition(newX, newY);
   };
 
-  const onEnd = (x: number, y: number) => {
-    if (activeDragId !== id) return;
-    const wasDragging = dragging.current;
+  const handleStart = (x: number, y: number) => {
+    const rect = frameRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    dragStart.current = { x, y };
+    pointerOffset.current = { x: x - rect.left, y: y - rect.top };
+    setIsDragging(false);
+  };
 
-    if (wasDragging) {
-      const frame = frameRef.current;
-      if (!frame) return;
-      const anchorSide = x < window.innerWidth / 2 ? 'left' : 'right';
-      setAnchor(anchorSide);
-      const maxX = window.innerWidth - frame.offsetWidth;
-      const newX = anchored
-        ? (anchorSide === 'left' ? 10 : maxX - 10)
-        : x - pointerOffset.current.x;
-      const newY = y - pointerOffset.current.y;
-      setPosition({
-        x: Math.max(0, Math.min(newX, maxX)),
-        y: Math.max(0, Math.min(newY, window.innerHeight - frame.offsetHeight))
-      });
+  const handleMove = (x: number, y: number) => {
+    if (!dragStart.current) return;
+    const dx = x - dragStart.current.x;
+    const dy = y - dragStart.current.y;
+    
+    if (!isDragging && (anchored || Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
+      setIsDragging(true);
     }
+    if (!isDragging) return;
 
-    dragging.current = false;
-    dragStartPosition.current = null;
-    activeDragId = null;
+    updatePosition(x - pointerOffset.current.x, y - pointerOffset.current.y);
   };
 
-  const wrapChild = (child: React.ReactElement) => {
-    const childProps = child.props as { 
+  const handleEnd = (x: number, y: number) => {
+    if (isDragging) {
+      const frame = frameRef.current;
+      if (frame && anchored) {
+        const side = x < window.innerWidth / 2 ? 'left' : 'right';
+        setAnchor(side);
+        const finalX = side === 'left' ? 10 : window.innerWidth - frame.offsetWidth - 10;
+        updatePosition(finalX, y - pointerOffset.current.y);
+      }
+    }
+    dragStart.current = null;
+    setIsDragging(false);
+  };
+
+  const bindChild = (child: React.ReactElement) => {
+    const props = child.props as {
       onClick?: (e: ReactMouseEvent) => void;
       onTouchEnd?: (e: ReactTouchEvent) => void;
       style?: React.CSSProperties;
@@ -152,80 +123,89 @@ const DraggableFrame: React.FC<Props> = ({
 
     return cloneElement(child, {
       onClick: (e: ReactMouseEvent) => {
-        if (dragging.current) {
+        if (isDragging) {
           e.preventDefault();
-          e.stopPropagation();
           return;
         }
-        childProps.onClick?.(e);
+        props.onClick?.(e);
       },
       onTouchEnd: (e: ReactTouchEvent) => {
-        if (dragging.current) {
+        if (isDragging) {
           e.preventDefault();
-          e.stopPropagation();
           return;
         }
-        childProps.onTouchEnd?.(e);
+        props.onTouchEnd?.(e);
       },
       style: {
-        ...childProps.style,
-        pointerEvents: dragging.current ? 'none' : 'auto'
+        ...props.style,
+        pointerEvents: isDragging ? 'none' : 'auto',
+        touchAction: 'none'
       }
     });
   };
 
   useEffect(() => {
-    const mouseMove = (e: MouseEvent) => onMove(e.clientX, e.clientY);
-    const mouseUp = (e: MouseEvent) => onEnd(e.clientX, e.clientY);
-    const touchMove = (e: TouchEvent) => {
-      if (!eventExhausted && !dragging.current) return;
-      const t = e.touches[0];
-      if (dragging.current) {
+    const onMouseMove = (e: MouseEvent) => handleMove(e.clientX, e.clientY);
+    const onMouseUp = (e: MouseEvent) => handleEnd(e.clientX, e.clientY);
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!isDragging && !eventExhausted) return;
+      const touch = e.touches[0];
+      if (isDragging) {
         e.preventDefault();
       }
-      onMove(t.clientX, t.clientY);
-    };
-    const touchEnd = (e: TouchEvent) => {
-      const t = e.changedTouches[0];
-      onEnd(t.clientX, t.clientY);
+      handleMove(touch.clientX, touch.clientY);
     };
 
-    window.addEventListener('mousemove', mouseMove);
-    window.addEventListener('mouseup', mouseUp);
-    window.addEventListener('touchmove', touchMove, { passive: false });
-    window.addEventListener('touchend', touchEnd);
+    const onTouchEnd = (e: TouchEvent) => {
+      const touch = e.changedTouches[0];
+      if (isDragging) {
+        e.preventDefault();
+      }
+      handleEnd(touch.clientX, touch.clientY);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchend', onTouchEnd);
+    window.addEventListener('touchcancel', onTouchEnd);
 
     return () => {
-      window.removeEventListener('mousemove', mouseMove);
-      window.removeEventListener('mouseup', mouseUp);
-      window.removeEventListener('touchmove', touchMove);
-      window.removeEventListener('touchend', touchEnd);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+      window.removeEventListener('touchcancel', onTouchEnd);
     };
-  }, [eventExhausted, id]);
+  }, [isDragging, eventExhausted, anchored]);
 
   return (
     <div
       ref={frameRef}
-      role="button"
-      tabIndex={0}
-      onMouseDown={(e) => { if (e.button === 0) onStart(e.clientX, e.clientY); }}
-      onTouchStart={(e) => { const t = e.touches[0]; onStart(t.clientX, t.clientY); }}
+      onMouseDown={(e) => {
+        if (e.button === 0) handleStart(e.clientX, e.clientY);
+      }}
+      onTouchStart={(e) => {
+        const touch = e.touches[0];
+        handleStart(touch.clientX, touch.clientY);
+      }}
       style={{
         position: 'fixed',
         left: 0,
         top: 0,
         transform: `translate(${position.x}px, ${position.y}px)`,
-        cursor: dragging.current ? 'grabbing' : 'grab',
+        cursor: isDragging ? 'grabbing' : 'grab',
         userSelect: 'none',
         touchAction: 'none',
         zIndex: 1000,
-        transition: anchored ? 'transform 0.25s ease-out' : undefined,
+        transition: anchored && !isDragging ? 'transform 0.25s ease' : undefined,
         ...style
       }}
       className={className}
     >
       {Children.map(children, (child) =>
-        isValidElement(child) ? wrapChild(child) : child
+        isValidElement(child) ? bindChild(child) : child
       )}
     </div>
   );
