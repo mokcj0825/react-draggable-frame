@@ -266,15 +266,14 @@ const DraggableFrame: React.FC<Props> = ({
       onTouchStart={handleTouchStart}
       style={{
         position: 'fixed',
-        left: 0,
-        top: 0,
-        transform: `translate(${position.x}px, ${position.y}px)`,
+        left: `${position.x}px`,
+        top: `${position.y}px`,
         cursor: isDragging ? 'grabbing' : 'grab',
         userSelect: 'none',
         touchAction: 'none',
         zIndex: finalConfig.zIndex,
         transition: anchored && !isDragging 
-          ? `transform ${finalConfig.transitionDuration}ms ease` 
+          ? `left ${finalConfig.transitionDuration}ms ease, top ${finalConfig.transitionDuration}ms ease` 
           : undefined,
         ...style
       }}
