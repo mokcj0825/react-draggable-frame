@@ -28,7 +28,7 @@
     "responsive",
     "anchor"
   ],
-  "author": "Your Name",
+  "author": "mokcj0825",
   "license": "MIT",
   "peerDependencies": {
     "react": ">=16.8.0",
