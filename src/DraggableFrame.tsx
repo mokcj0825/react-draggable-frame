@@ -32,7 +32,6 @@ export interface Props {
   defaultPosition?: Position;
   className?: string;
   style?: React.CSSProperties;
-  eventExhausted?: boolean;
   anchored?: boolean;
   config?: Partial<DraggableConfig>;
 }
@@ -51,7 +50,6 @@ const DraggableFrame: React.FC<Props> = ({
   defaultPosition = { x: 20, y: 20 },
   className = '',
   style = {},
-  eventExhausted = false,
   anchored = false,
   config = {}
 }) => {
@@ -76,12 +74,9 @@ const DraggableFrame: React.FC<Props> = ({
   });
 
   const [isDragging, setIsDragging] = useState(false);
-  const [dragState, setDragState] = useState<'idle' | 'starting' | 'dragging'>('idle');
   const dragStart = useRef<Position | null>(null);
   const pointerOffset = useRef<Position>({ x: 0, y: 0 });
   const [anchor, setAnchor] = useState<'left' | 'right'>('left');
-  const isTouchDevice = useRef(false);
-  const touchTimeoutRef = useRef<number | null>(null);
 
   const savePosition = useCallback((x: number, y: number) => {
     const px = x / window.innerWidth;
@@ -98,21 +93,29 @@ const DraggableFrame: React.FC<Props> = ({
     
     const maxX = window.innerWidth - frame.offsetWidth;
     const maxY = window.innerHeight - frame.offsetHeight;
-    const newX = Math.max(0, Math.min(x, maxX));
-    const newY = Math.max(0, Math.min(y, maxY));
+    
+    let newX = Math.max(0, Math.min(x, maxX));
+    let newY = Math.max(0, Math.min(y, maxY));
+    
+    if (anchored && !isDragging) {
+      const frameCenter = newX + frame.offsetWidth / 2;
+      const side = frameCenter < window.innerWidth / 2 ? 'left' : 'right';
+      setAnchor(side);
+      newX = side === 'left' 
+        ? finalConfig.anchorMargin 
+        : maxX - finalConfig.anchorMargin;
+    }
     
     setPosition({ x: newX, y: newY });
     savePosition(newX, newY);
-  }, [savePosition]);
+  }, [savePosition, anchored, finalConfig.anchorMargin, isDragging]);
 
-  const handleStart = useCallback((x: number, y: number, isTouch: boolean) => {
+  const handleStart = useCallback((x: number, y: number) => {
     const rect = frameRef.current?.getBoundingClientRect();
     if (!rect) return;
     
-    isTouchDevice.current = isTouch;
     dragStart.current = { x, y };
     pointerOffset.current = { x: x - rect.left, y: y - rect.top };
-    setDragState('starting');
     setIsDragging(false);
   }, []);
 
@@ -122,49 +125,33 @@ const DraggableFrame: React.FC<Props> = ({
     const dx = x - dragStart.current.x;
     const dy = y - dragStart.current.y;
     
-    switch (dragState) {
-      case 'starting':
-        if (Math.abs(dx) > finalConfig.dragThreshold || Math.abs(dy) > finalConfig.dragThreshold) {
-          setDragState('dragging');
-          setIsDragging(true);
-        }
-        break;
-      case 'dragging':
-        updatePosition(x - pointerOffset.current.x, y - pointerOffset.current.y);
-        break;
-      default:
-        break;
+    if (!isDragging && (Math.abs(dx) > finalConfig.dragThreshold || Math.abs(dy) > finalConfig.dragThreshold)) {
+      setIsDragging(true);
     }
-  }, [dragState, finalConfig.dragThreshold, updatePosition]);
+    
+    if (isDragging) {
+      updatePosition(x - pointerOffset.current.x, y - pointerOffset.current.y);
+    }
+  }, [isDragging, finalConfig.dragThreshold, updatePosition]);
 
-  const handleEnd = useCallback((x: number, y: number) => {
-    if (dragState === 'dragging' && anchored) {
+  const handleEnd = useCallback(() => {
+    if (anchored && isDragging) {
       const frame = frameRef.current;
       if (frame) {
-        const side = x < window.innerWidth / 2 ? 'left' : 'right';
+        const frameCenter = position.x + frame.offsetWidth / 2;
+        const side = frameCenter < window.innerWidth / 2 ? 'left' : 'right';
         setAnchor(side);
+        const maxX = window.innerWidth - frame.offsetWidth;
         const finalX = side === 'left' 
           ? finalConfig.anchorMargin 
-          : window.innerWidth - frame.offsetWidth - finalConfig.anchorMargin;
-        updatePosition(finalX, y - pointerOffset.current.y);
+          : maxX - finalConfig.anchorMargin;
+        setPosition(prev => ({ ...prev, x: finalX }));
+        savePosition(finalX, position.y);
       }
     }
-    
     dragStart.current = null;
-    setDragState('idle');
     setIsDragging(false);
-    
-    // Reset touch device flag after a short delay to prevent immediate re-triggering
-    if (isTouchDevice.current) {
-      if (touchTimeoutRef.current) {
-        clearTimeout(touchTimeoutRef.current);
-      }
-      touchTimeoutRef.current = window.setTimeout(() => {
-        isTouchDevice.current = false;
-        touchTimeoutRef.current = null;
-      }, 150);
-    }
-  }, [dragState, anchored, finalConfig.anchorMargin, updatePosition]);
+  }, [anchored, isDragging, position.x, position.y, finalConfig.anchorMargin, savePosition]);
 
   const bindChild = useCallback((child: React.ReactElement) => {
     const props = child.props as {
@@ -198,73 +185,78 @@ const DraggableFrame: React.FC<Props> = ({
     });
   }, [isDragging]);
 
-  useEffect(() => {
+  useEffect(() => {    
     const onMouseMove = (e: MouseEvent) => {
-      if (!isTouchDevice.current) {
-        handleMove(e.clientX, e.clientY);
-      }
+      handleMove(e.clientX, e.clientY);
     };
 
-    const onMouseUp = (e: MouseEvent) => {
-      if (!isTouchDevice.current) {
-        handleEnd(e.clientX, e.clientY);
-      }
+    const onMouseUp = () => {
+      handleEnd();
     };
 
     const onTouchMove = (e: TouchEvent) => {
-      if (isTouchDevice.current && dragState !== 'idle') {
+      if (dragStart.current) {
         e.preventDefault();
         const touch = e.touches[0];
         handleMove(touch.clientX, touch.clientY);
       }
     };
 
-    const onTouchEnd = (e: TouchEvent) => {
-      if (isTouchDevice.current) {
-        e.preventDefault();
-        const touch = e.changedTouches[0];
-        handleEnd(touch.clientX, touch.clientY);
+    const onTouchEnd = () => {
+      handleEnd();
+    };
+
+    const onTouchCancel = () => {
+      handleEnd();
+    };
+
+    const onResize = () => {
+      const frame = frameRef.current;
+      if (frame && anchored) {
+        const maxX = window.innerWidth - frame.offsetWidth;
+        const frameCenter = position.x + frame.offsetWidth / 2;
+        const side = frameCenter < window.innerWidth / 2 ? 'left' : 'right';
+        const newX = side === 'left' 
+          ? finalConfig.anchorMargin 
+          : maxX - finalConfig.anchorMargin;
+        setPosition(prev => ({ ...prev, x: newX }));
+        savePosition(newX, position.y);
       }
     };
 
-    const onTouchCancel = (e: TouchEvent) => {
-      if (isTouchDevice.current) {
-        e.preventDefault();
-        const touch = e.changedTouches[0];
-        handleEnd(touch.clientX, touch.clientY);
-      }
-    };
+    window.addEventListener('mouseup', onMouseUp, true);
+    document.addEventListener('mouseup', onMouseUp, true);
+    window.addEventListener('touchend', onTouchEnd, true);
+    document.addEventListener('touchend', onTouchEnd, true);
+    window.addEventListener('touchcancel', onTouchCancel, true);
+    document.addEventListener('touchcancel', onTouchCancel, true);
 
     window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
     window.addEventListener('touchmove', onTouchMove, { passive: false });
-    window.addEventListener('touchend', onTouchEnd);
-    window.addEventListener('touchcancel', onTouchCancel);
+    window.addEventListener('resize', onResize);
 
     return () => {
       window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('mouseup', onMouseUp, true);
+      document.removeEventListener('mouseup', onMouseUp, true);
       window.removeEventListener('touchmove', onTouchMove);
-      window.removeEventListener('touchend', onTouchEnd);
-      window.removeEventListener('touchcancel', onTouchCancel);
-      
-      if (touchTimeoutRef.current) {
-        clearTimeout(touchTimeoutRef.current);
-        touchTimeoutRef.current = null;
-      }
+      window.removeEventListener('touchend', onTouchEnd, true);
+      document.removeEventListener('touchend', onTouchEnd, true);
+      window.removeEventListener('touchcancel', onTouchCancel, true);
+      document.removeEventListener('touchcancel', onTouchCancel, true);
+      window.removeEventListener('resize', onResize);
     };
-  }, [handleMove, handleEnd, dragState]);
+  }, [handleMove, handleEnd, anchored, position.x, position.y, finalConfig.anchorMargin, savePosition]);
 
   const handleMouseDown = useCallback((e: ReactMouseEvent) => {
     if (e.button === 0) {
-      handleStart(e.clientX, e.clientY, false);
+      handleStart(e.clientX, e.clientY);
     }
   }, [handleStart]);
 
   const handleTouchStart = useCallback((e: ReactTouchEvent) => {
-    e.preventDefault();
     const touch = e.touches[0];
-    handleStart(touch.clientX, touch.clientY, true);
+    handleStart(touch.clientX, touch.clientY);
   }, [handleStart]);
 
   return (

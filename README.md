@@ -51,7 +51,6 @@ function App() {
 | `defaultPosition` | `{ x: number, y: number }` | `{ x: 20, y: 20 }` | Initial position of the frame |
 | `className` | `string` | `''` | Custom CSS class |
 | `style` | `React.CSSProperties` | `{}` | Custom inline styles |
-| `eventExhausted` | `boolean` | `false` | When true, prevents touch events from propagating during drag |
 | `anchored` | `boolean` | `false` | When true, frame snaps to left/right edge with smooth transition and maintains position on window resize |
 
 ## How It Works

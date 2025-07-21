@@ -77,4 +77,7 @@ const Draggable: React.FC<Props> = ({ children, defaultPosition = { x: 20, y: 20
   );
 };
 
+/**
+ * @deprecated Use DraggableFrame instead
+ */
 export default Draggable;
