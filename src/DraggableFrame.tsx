@@ -1,228 +1,214 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import type { ReactNode } from 'react';
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  Children,
+  cloneElement,
+  isValidElement
+} from 'react';
+import type {
+  ReactNode,
+  MouseEvent as ReactMouseEvent,
+  TouchEvent as ReactTouchEvent
+} from 'react';
 
 interface Position {
-    x: number;
-    y: number;
-}
-
-interface State {
-    position: Position;
-    isDragging: boolean;
-    anchor: 'left' | 'right';
-    isVisible: boolean;
+  x: number;
+  y: number;
 }
 
 export interface Props {
-    children: ReactNode;
-    defaultPosition?: Position;
-    className?: string;
-    style?: React.CSSProperties;
-    consumeEvents?: boolean;
+  id: string;
+  children: ReactNode;
+  defaultPosition?: Position;
+  className?: string;
+  style?: React.CSSProperties;
+  eventExhausted?: boolean;
+  anchored?: boolean;
 }
 
+const STORAGE_PREFIX = 'draggable-frame';
+const DRAG_THRESHOLD = 5;
 
-const STORAGE_KEY = 'frameState';
-
-    const DraggableFrame: React.FC<Props> = ({
-    children,
-    defaultPosition = { x: 20, y: 20 },
-    className = '',
-    style = {},
-    consumeEvents = false
+const DraggableFrame: React.FC<Props> = ({
+  id,
+  children,
+  defaultPosition = { x: 20, y: 20 },
+  className = '',
+  style = {},
+  eventExhausted = false,
+  anchored = false
 }) => {
-    const [state, setState] = useState<State>(() => {
-        const savedState = localStorage.getItem(STORAGE_KEY);
-        if (savedState) {
-            return JSON.parse(savedState);
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<Position>(() => {
+    const saved = localStorage.getItem(`${STORAGE_PREFIX}:${id}`);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.percentage) {
+          return {
+            x: parsed.x * window.innerWidth,
+            y: parsed.y * window.innerHeight
+          };
         }
-        return {
-            position: defaultPosition,
-            isDragging: false,
-            anchor: 'left' as const,
-            isVisible: true
-        };
-    });
-
-    const frameRef = useRef<HTMLDivElement>(null);
-    const dragStartRef = useRef<Position>({ x: 0, y: 0 });
-
-    useEffect(() => {
-        if (!state.isDragging) {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        }
-    }, [state]);
-
-    useEffect(() => {
-        const handleResize = () => {
-            if (!frameRef.current) return;
-            
-            setState(prev => {
-                const newPosition = {
-                    ...prev.position,
-                    x: prev.anchor === 'right' 
-                        ? window.innerWidth - frameRef.current!.offsetWidth - 10
-                        : 10
-                };
-                
-                return {
-                    ...prev,
-                    position: newPosition
-                };
-            });
-        };
-
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, [state.anchor]);
-
-    const handleMouseDown = (event: React.MouseEvent) => {
-        if (event.button !== 0) return;
-        
-        event.preventDefault();
-        if (!frameRef.current) return;
-
-        const rect = frameRef.current.getBoundingClientRect();
-        dragStartRef.current = {
-            x: event.clientX - rect.left,
-            y: event.clientY - rect.top
-        };
-
-        setState(prev => ({ ...prev, isDragging: true }));
-    };
-
-    const handleTouchStart = (event: React.TouchEvent) => {
-        event.preventDefault();
-        if (!frameRef.current) return;
-
-        const touch = event.touches[0];
-        const rect = frameRef.current.getBoundingClientRect();
-        dragStartRef.current = {
-            x: touch.clientX - rect.left,
-            y: touch.clientY - rect.top
-        };
-
-        setState(prev => ({ ...prev, isDragging: true }));
-    };
-
-    const handleClick = (event: React.MouseEvent) => {
-        if (consumeEvents) {
-            event.preventDefault();
-            event.stopPropagation();
-        }
-    };
-
-
-
-    const handleMouseMove = useCallback((event: MouseEvent | TouchEvent) => {
-        const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX;
-        const clientY = 'touches' in event ? event.touches[0].clientY : event.clientY;
-
-        if (state.isDragging && frameRef.current) {
-            const newX = clientX - dragStartRef.current.x;
-            const newY = clientY - dragStartRef.current.y;
-
-            // Constrain to viewport bounds
-            const maxX = window.innerWidth - frameRef.current.offsetWidth;
-            const maxY = window.innerHeight - frameRef.current.offsetHeight;
-
-            const constrainedX = Math.max(0, Math.min(newX, maxX));
-            const constrainedY = Math.max(0, Math.min(newY, maxY));
-
-            setState(prev => ({
-                ...prev,
-                position: { x: constrainedX, y: constrainedY }
-            }));
-        }
-    }, [state.isDragging]);
-
-    const handleMouseUp = useCallback((event?: MouseEvent | TouchEvent) => {
-        if (!state.isDragging) return;
-
-        if (event && 'button' in event && event.button !== 0) return;
-
-        if (state.isDragging && event) {
-            const clientX = 'touches' in event ? event.changedTouches[0].clientX : event.clientX;
-            const clientY = 'touches' in event ? event.changedTouches[0].clientY : event.clientY;
-
-            const finalY = clientY - dragStartRef.current.y;
-
-            const maxY = window.innerHeight - (frameRef.current?.offsetHeight ?? 0);
-            const constrainedY = Math.max(0, Math.min(finalY, maxY));
-
-            const viewportCenter = window.innerWidth / 2;
-            const newAnchor = clientX < viewportCenter ? 'left' : 'right';
-
-            const anchoredPosition = { 
-                x: newAnchor === 'left' 
-                    ? 10 
-                    : window.innerWidth - (frameRef.current?.offsetWidth ?? 0) - 10,
-                y: constrainedY
-            };
-
-            setState(prev => ({
-                ...prev,
-                isDragging: false,
-                anchor: newAnchor,
-                position: anchoredPosition
-            }));
-        }
-    }, [state.isDragging]);
-
-    useEffect(() => {
-        if (state.isDragging) {
-            document.addEventListener('mousemove', handleMouseMove);
-            document.addEventListener('mouseup', handleMouseUp);
-            document.addEventListener('touchmove', handleMouseMove, { passive: false });
-            document.addEventListener('touchend', handleMouseUp);
-            
-            return () => {
-                document.removeEventListener('mousemove', handleMouseMove);
-                document.removeEventListener('mouseup', handleMouseUp);
-                document.removeEventListener('touchmove', handleMouseMove);
-                document.removeEventListener('touchend', handleMouseUp);
-            };
-        }
-    }, [handleMouseMove, handleMouseUp, state.isDragging]);
-
-
-
-    if (!state.isVisible) {
-        return null;
+        return parsed;
+      } catch {}
     }
+    return defaultPosition;
+  });
 
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStart = useRef<Position | null>(null);
+  const pointerOffset = useRef<Position>({ x: 0, y: 0 });
+  const [anchor, setAnchor] = useState<'left' | 'right'>('left');
 
+  const savePosition = (x: number, y: number) => {
+    const px = x / window.innerWidth;
+    const py = y / window.innerHeight;
+    localStorage.setItem(`${STORAGE_PREFIX}:${id}`, JSON.stringify({ x: px, y: py, percentage: true }));
+  };
 
-    return (
-        <div
-            ref={frameRef}
-            role="button"
-            tabIndex={0}
-            style={{
-                position: 'fixed',
-                left: state.position.x,
-                top: state.position.y,
-                width: 'fit-content',
-                height: 'fit-content',
-                zIndex: 1000,
-                cursor: state.isDragging ? 'grabbing' : 'grab',
-                userSelect: 'none',
-                touchAction: 'none',
-                ...style
-            }}
-            className={className}
-            onMouseDown={handleMouseDown}
-            onTouchStart={handleTouchStart}
-            onClick={handleClick}
-            onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                }
-            }}
-        >
-            {children}
-        </div>
-    );
+  const updatePosition = (x: number, y: number) => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    const maxX = window.innerWidth - frame.offsetWidth;
+    const maxY = window.innerHeight - frame.offsetHeight;
+    const newX = Math.max(0, Math.min(x, maxX));
+    const newY = Math.max(0, Math.min(y, maxY));
+    setPosition({ x: newX, y: newY });
+    savePosition(newX, newY);
+  };
+
+  const handleStart = (x: number, y: number) => {
+    const rect = frameRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    dragStart.current = { x, y };
+    pointerOffset.current = { x: x - rect.left, y: y - rect.top };
+    setIsDragging(false);
+  };
+
+  const handleMove = (x: number, y: number) => {
+    if (!dragStart.current) return;
+    const dx = x - dragStart.current.x;
+    const dy = y - dragStart.current.y;
+    
+    if (!isDragging && (anchored || Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
+      setIsDragging(true);
+    }
+    if (!isDragging) return;
+
+    updatePosition(x - pointerOffset.current.x, y - pointerOffset.current.y);
+  };
+
+  const handleEnd = (x: number, y: number) => {
+    if (isDragging) {
+      const frame = frameRef.current;
+      if (frame && anchored) {
+        const side = x < window.innerWidth / 2 ? 'left' : 'right';
+        setAnchor(side);
+        const finalX = side === 'left' ? 10 : window.innerWidth - frame.offsetWidth - 10;
+        updatePosition(finalX, y - pointerOffset.current.y);
+      }
+    }
+    dragStart.current = null;
+    setIsDragging(false);
+  };
+
+  const bindChild = (child: React.ReactElement) => {
+    const props = child.props as {
+      onClick?: (e: ReactMouseEvent) => void;
+      onTouchEnd?: (e: ReactTouchEvent) => void;
+      style?: React.CSSProperties;
+    };
+
+    return cloneElement(child, {
+      onClick: (e: ReactMouseEvent) => {
+        if (isDragging) {
+          e.preventDefault();
+          return;
+        }
+        props.onClick?.(e);
+      },
+      onTouchEnd: (e: ReactTouchEvent) => {
+        if (isDragging) {
+          e.preventDefault();
+          return;
+        }
+        props.onTouchEnd?.(e);
+      },
+      style: {
+        ...props.style,
+        pointerEvents: isDragging ? 'none' : 'auto',
+        touchAction: 'none'
+      }
+    });
+  };
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => handleMove(e.clientX, e.clientY);
+    const onMouseUp = (e: MouseEvent) => handleEnd(e.clientX, e.clientY);
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!isDragging && !eventExhausted) return;
+      const touch = e.touches[0];
+      if (isDragging) {
+        e.preventDefault();
+      }
+      handleMove(touch.clientX, touch.clientY);
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      const touch = e.changedTouches[0];
+      if (isDragging) {
+        e.preventDefault();
+      }
+      handleEnd(touch.clientX, touch.clientY);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchend', onTouchEnd);
+    window.addEventListener('touchcancel', onTouchEnd);
+
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+      window.removeEventListener('touchcancel', onTouchEnd);
+    };
+  }, [isDragging, eventExhausted, anchored]);
+
+  return (
+    <div
+      ref={frameRef}
+      onMouseDown={(e) => {
+        if (e.button === 0) handleStart(e.clientX, e.clientY);
+      }}
+      onTouchStart={(e) => {
+        const touch = e.touches[0];
+        handleStart(touch.clientX, touch.clientY);
+      }}
+      style={{
+        position: 'fixed',
+        left: 0,
+        top: 0,
+        transform: `translate(${position.x}px, ${position.y}px)`,
+        cursor: isDragging ? 'grabbing' : 'grab',
+        userSelect: 'none',
+        touchAction: 'none',
+        zIndex: 1000,
+        transition: anchored && !isDragging ? 'transform 0.25s ease' : undefined,
+        ...style
+      }}
+      className={className}
+    >
+      {Children.map(children, (child) =>
+        isValidElement(child) ? bindChild(child) : child
+      )}
+    </div>
+  );
 };
 
 export default DraggableFrame;
